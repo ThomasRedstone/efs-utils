@@ -1,4 +1,4 @@
-name: Sync Upstream and Build
+name: Build Upstream Master
 
 on:
   schedule:
@@ -6,67 +6,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-and-build:
+  build-master:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libssl-dev pkg-config gettext cargo cmake clang jq
 
-      - name: Get latest upstream tag
-        id: get_upstream
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          latest_tag=$(curl -s -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/aws/efs-utils/releases/latest | jq -r .tag_name)
-          echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
-          echo "Found upstream tag: $latest_tag"
-
-      - name: Check if tag exists locally
-        id: check_tag
-        run: |
-          if git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
-            echo "Tag $LATEST_TAG already exists."
-            echo "new_release=false" >> $GITHUB_OUTPUT
-          else
-            echo "Tag $LATEST_TAG is new."
-            echo "new_release=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Checkout upstream code
-        if: steps.check_tag.outputs.new_release == 'true'
+      - name: Checkout upstream master
         run: |
           git remote add upstream https://github.com/aws/efs-utils.git
-          git fetch upstream --tags
-          git checkout tags/$LATEST_TAG -b build-$LATEST_TAG
+          git fetch upstream master
+          git checkout upstream/master
+
+      - name: Generate Version
+        id: vars
+        run: |
+          # Generate a version based on date to ensure uniqueness for master builds
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          VERSION="master-$TIMESTAMP"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Update build script version
-        if: steps.check_tag.outputs.new_release == 'true'
         run: |
-          # Extract version number (remove 'v' prefix if present)
-          VERSION=${LATEST_TAG#v}
-          sed -i "s/^VERSION=.*/VERSION=$VERSION/" build-deb.sh
+          sed -i "s/^VERSION=.*/VERSION=${{ env.VERSION }}/" build-deb.sh
 
       - name: Build DEB package
-        if: steps.check_tag.outputs.new_release == 'true'
         run: ./build-deb.sh
 
       - name: Create Release
-        if: steps.check_tag.outputs.new_release == 'true'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ env.LATEST_TAG }}
-          name: Release ${{ env.LATEST_TAG }}
+          tag_name: ${{ env.VERSION }}
+          name: Master Build ${{ env.VERSION }}
           files: build/*.deb
           body: |
-            Automated build for upstream release ${{ env.LATEST_TAG }}.
-            Upstream: https://github.com/aws/efs-utils/releases/tag/${{ env.LATEST_TAG }}
+            Automated build from upstream master branch.
+            Upstream: https://github.com/aws/efs-utils/tree/master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
