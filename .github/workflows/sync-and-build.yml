@@ -22,8 +22,10 @@ jobs:
 
       - name: Get latest upstream tag
         id: get_upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          latest_tag=$(curl -s https://api.github.com/repos/aws/efs-utils/releases/latest | jq -r .tag_name)
+          latest_tag=$(curl -s -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/aws/efs-utils/releases/latest | jq -r .tag_name)
           echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
           echo "Found upstream tag: $latest_tag"
 
